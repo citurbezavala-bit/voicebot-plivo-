@@ -1,5 +1,4 @@
 const express = require("express");
-const plivo = require("plivo");
 const fetch = require("node-fetch");
 
 const app = express();
@@ -47,12 +46,11 @@ BENEFICIOS DE DONAR:
 - Constancia de donación
 - Una donación puede salvar hasta 3 vidas
 
-INSTRUCCIONES DE COMPORTAMIENTO:
+INSTRUCCIONES:
 - Responde en español de México, de forma cálida y motivadora
 - Sé muy breve (máximo 2 oraciones) porque tu voz se convierte a audio
 - Si alguien quiere agendar cita, pide su nombre y confirma el horario
 - Si preguntan por un tipo de sangre urgente, menciona la urgencia con amabilidad
-- Si alguien no puede donar, agradece su intención y explica brevemente por qué
 - Sin listas, sin markdown, solo texto natural para hablar
 `;
 
@@ -60,43 +58,41 @@ app.get("/", (req, res) => {
   res.send("Banco de Sangre Vida+ - Voicebot activo.");
 });
 
+// Twilio llama aquí cuando alguien marca tu número
 app.post("/voice", (req, res) => {
-  const callUUID = req.body.CallUUID || "default";
-  conversationHistory[callUUID] = [];
+  const callSid = req.body.CallSid || "default";
+  conversationHistory[callSid] = [];
 
-  const resp = plivo.Response();
-  resp.addSpeak(
-    "Gracias por llamar al Banco de Sangre Vida+. Soy tu asistente virtual. Por favor habla después del tono y con gusto te ayudo.",
-    { language: "es-MX" }
-  );
-  resp.addRecord({
-    action: `https://${req.headers.host}/transcribe?callUUID=${callUUID}`,
-    method: "POST",
-    maxLength: 15,
-    playBeep: true,
-    transcriptionType: "auto",
-    transcriptionUrl: `https://${req.headers.host}/transcribe?callUUID=${callUUID}`,
-    transcriptionMethod: "POST",
-  });
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say language="es-MX">Gracias por llamar al Banco de Sangre Vida+. Soy tu asistente virtual. Por favor habla después del tono.</Say>
+  <Record action="https://${req.headers.host}/transcribe?callSid=${callSid}" 
+          method="POST" 
+          maxLength="15" 
+          playBeep="true" 
+          transcribe="true" 
+          transcribeCallback="https://${req.headers.host}/transcribe?callSid=${callSid}"/>
+</Response>`;
 
-  res.set("Content-Type", "application/xml");
-  res.send(resp.toXML());
+  res.set("Content-Type", "text/xml");
+  res.send(twiml);
 });
 
+// Twilio manda aquí la transcripción
 app.post("/transcribe", async (req, res) => {
-  const callUUID = req.query.callUUID || "default";
-  const userText = req.body.TranscriptionText || req.body.transcription || "";
+  const callSid = req.query.callSid || "default";
+  const userText = req.body.TranscriptionText || "";
 
-  console.log(`[${callUUID}] Usuario dijo: "${userText}"`);
+  console.log(`[${callSid}] Usuario dijo: "${userText}"`);
 
-  if (!conversationHistory[callUUID]) {
-    conversationHistory[callUUID] = [];
+  if (!conversationHistory[callSid]) {
+    conversationHistory[callSid] = [];
   }
 
   let botReply = "Disculpa, no te escuché bien. ¿Puedes repetir tu pregunta?";
 
   if (userText) {
-    conversationHistory[callUUID].push({ role: "user", content: userText });
+    conversationHistory[callSid].push({ role: "user", content: userText });
 
     try {
       const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
@@ -110,39 +106,38 @@ app.post("/transcribe", async (req, res) => {
           model: "claude-sonnet-4-6",
           max_tokens: 300,
           system: BANCO_INFO,
-          messages: conversationHistory[callUUID],
+          messages: conversationHistory[callSid],
         }),
       });
 
       const data = await claudeRes.json();
       botReply = data.content?.[0]?.text || botReply;
 
-      conversationHistory[callUUID].push({
+      conversationHistory[callSid].push({
         role: "assistant",
         content: botReply,
       });
 
-      console.log(`[${callUUID}] Claude respondió: "${botReply}"`);
+      console.log(`[${callSid}] Claude respondió: "${botReply}"`);
     } catch (err) {
       console.error("Error llamando a Claude:", err.message);
     }
   }
 
-  const resp = plivo.Response();
-  resp.addSpeak(botReply, { language: "es-MX" });
-  resp.addSpeak("¿Tienes alguna otra pregunta?", { language: "es-MX" });
-  resp.addRecord({
-    action: `https://${req.headers.host}/transcribe?callUUID=${callUUID}`,
-    method: "POST",
-    maxLength: 15,
-    playBeep: true,
-    transcriptionType: "auto",
-    transcriptionUrl: `https://${req.headers.host}/transcribe?callUUID=${callUUID}`,
-    transcriptionMethod: "POST",
-  });
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say language="es-MX">${botReply}</Say>
+  <Say language="es-MX">¿Tienes alguna otra pregunta?</Say>
+  <Record action="https://${req.headers.host}/transcribe?callSid=${callSid}" 
+          method="POST" 
+          maxLength="15" 
+          playBeep="true" 
+          transcribe="true" 
+          transcribeCallback="https://${req.headers.host}/transcribe?callSid=${callSid}"/>
+</Response>`;
 
-  res.set("Content-Type", "application/xml");
-  res.send(resp.toXML());
+  res.set("Content-Type", "text/xml");
+  res.send(twiml);
 });
 
 const PORT = process.env.PORT || 3000;
