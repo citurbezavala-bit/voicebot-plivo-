@@ -1,0 +1,11 @@
+{
+  "name": "voicebot-plivo",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": { "start": "node index.js" },
+  "dependencies": {
+    "express": "^4.18.0",
+    "plivo": "^4.40.0",
+    "node-fetch": "^2.6.0"
+  }
+}
