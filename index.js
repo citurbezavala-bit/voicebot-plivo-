@@ -58,30 +58,25 @@ app.get("/", (req, res) => {
   res.send("Banco de Sangre Vida+ - Voicebot activo.");
 });
 
-// Twilio llama aquí cuando alguien marca tu número
 app.post("/voice", (req, res) => {
   const callSid = req.body.CallSid || "default";
   conversationHistory[callSid] = [];
 
   const twiml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say language="es-MX">Gracias por llamar al Banco de Sangre Vida+. Soy tu asistente virtual. Por favor habla después del tono.</Say>
-  <Record action="https://${req.headers.host}/transcribe?callSid=${callSid}" 
-          method="POST" 
-          maxLength="15" 
-          playBeep="true" 
-          transcribe="true" 
-          transcribeCallback="https://${req.headers.host}/transcribe?callSid=${callSid}"/>
+  <Say voice="Polly.Mia-Neural" language="es-MX">Gracias por llamar al Banco de Sangre Vida+. Soy tu asistente virtual.</Say>
+  <Gather input="speech" action="https://${req.headers.host}/responder?callSid=${callSid}" method="POST" language="es-MX" speechTimeout="auto" timeout="5">
+    <Say voice="Polly.Mia-Neural" language="es-MX">¿En qué te puedo ayudar?</Say>
+  </Gather>
 </Response>`;
 
   res.set("Content-Type", "text/xml");
   res.send(twiml);
 });
 
-// Twilio manda aquí la transcripción
-app.post("/transcribe", async (req, res) => {
+app.post("/responder", async (req, res) => {
   const callSid = req.query.callSid || "default";
-  const userText = req.body.TranscriptionText || "";
+  const userText = req.body.SpeechResult || "";
 
   console.log(`[${callSid}] Usuario dijo: "${userText}"`);
 
@@ -89,7 +84,7 @@ app.post("/transcribe", async (req, res) => {
     conversationHistory[callSid] = [];
   }
 
-  let botReply = "Disculpa, no te escuché bien. ¿Puedes repetir tu pregunta?";
+  let botReply = "Disculpa, no te escuché bien.";
 
   if (userText) {
     conversationHistory[callSid].push({ role: "user", content: userText });
@@ -107,40 +102,3 @@ app.post("/transcribe", async (req, res) => {
           max_tokens: 300,
           system: BANCO_INFO,
           messages: conversationHistory[callSid],
-        }),
-      });
-
-      const data = await claudeRes.json();
-      botReply = data.content?.[0]?.text || botReply;
-
-      conversationHistory[callSid].push({
-        role: "assistant",
-        content: botReply,
-      });
-
-      console.log(`[${callSid}] Claude respondió: "${botReply}"`);
-    } catch (err) {
-      console.error("Error llamando a Claude:", err.message);
-    }
-  }
-
-  const twiml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Say language="es-MX">${botReply}</Say>
-  <Say language="es-MX">¿Tienes alguna otra pregunta?</Say>
-  <Record action="https://${req.headers.host}/transcribe?callSid=${callSid}" 
-          method="POST" 
-          maxLength="15" 
-          playBeep="true" 
-          transcribe="true" 
-          transcribeCallback="https://${req.headers.host}/transcribe?callSid=${callSid}"/>
-</Response>`;
-
-  res.set("Content-Type", "text/xml");
-  res.send(twiml);
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Banco de Sangre Vida+ - Servidor activo en puerto ${PORT}`);
-});
